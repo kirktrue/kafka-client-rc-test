@@ -17,9 +17,11 @@ You can now run the application with commands like:
 java \
   -jar build/libs/kafka-client-rc-test-1.0-SNAPSHOT.jar \
   --broker localhost:9092 \
-  --count 100 \
+  --topic foo \
   --acks all \
-  --size 32
+  --group-protocol consumer \
+  --message-size 1024 \
+  --message-count 100
 ```
 
 ## Command Line Options

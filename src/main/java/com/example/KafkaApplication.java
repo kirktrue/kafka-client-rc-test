@@ -7,14 +7,12 @@ import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
+import org.apache.kafka.clients.consumer.GroupProtocol;
 
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class KafkaApplication {
-
-    private static final String TOPIC = "test-topic";
 
     public static void main(String[] args) {
         // Create command line options
@@ -26,42 +24,34 @@ public class KafkaApplication {
             CommandLine cmd = parser.parse(options, args);
 
             String brokerHost = cmd.getOptionValue("broker");
-            int messageCount = Integer.parseInt(cmd.getOptionValue("count"));
+            String topic = cmd.getOptionValue("topic");
             String acks = cmd.getOptionValue("acks");
-            int messageSize = Integer.parseInt(cmd.getOptionValue("size"));
+            GroupProtocol groupProtocol = GroupProtocol.of(cmd.getOptionValue("group-protocol"));
+            int messageSize = Integer.parseInt(cmd.getOptionValue("message-size"));
+            int messageCount = Integer.parseInt(cmd.getOptionValue("message-count"));
 
-            System.out.println(
-                "Starting Kafka application with the following configuration:"
-            );
-            System.out.println("Broker Host: " + brokerHost);
-            System.out.println("Message Count: " + messageCount);
-            System.out.println("Acks: " + acks);
-            System.out.println("Message Size: " + messageSize);
+            System.out.println("Starting Kafka application with the following configuration:");
+            System.out.println("Broker Host:  " + brokerHost);
+            System.out.println("Topic:          " + topic);
+            System.out.println("Acks:           " + acks);
+            System.out.println("Group Protocol: " + groupProtocol);
+            System.out.println("Message Size:   " + messageSize);
+            System.out.println("Message Count:  " + messageCount);
 
             // CountDownLatch to wait for consumer to receive all messages
-            CountDownLatch latch = new CountDownLatch(1);
-            AtomicInteger receivedMessages = new AtomicInteger(0);
+            CountDownLatch latch = new CountDownLatch(messageCount);
 
             // Create and start the consumer in a separate thread
-            KafkaMessageConsumer consumer = new KafkaMessageConsumer(
-                brokerHost,
-                TOPIC,
-                receivedMessages,
-                latch,
-                messageCount
-            );
+            KafkaMessageConsumer consumer = new KafkaMessageConsumer(brokerHost, topic, groupProtocol, latch);
             Thread consumerThread = new Thread(consumer);
             consumerThread.start();
 
             // Create and use the producer
-            KafkaMessageProducer producer = new KafkaMessageProducer(
-                brokerHost,
-                acks
-            );
+            KafkaMessageProducer producer = new KafkaMessageProducer(brokerHost, acks);
+
             for (int i = 0; i < messageCount; i++) {
                 String message = generateRandomString(messageSize);
-                producer.sendMessage(TOPIC, message);
-                System.out.println("Sent message " + (i + 1) + ": " + message);
+                producer.sendMessage(topic, message);
             }
 
             producer.close();
@@ -71,20 +61,12 @@ public class KafkaApplication {
                 latch.await();
                 consumer.shutdown();
             } catch (InterruptedException e) {
-                System.err.println(
-                    "Application interrupted: " + e.getMessage()
-                );
+                System.err.println("Application interrupted: " + e.getMessage());
             }
 
-            System.out.println(
-                "Application completed successfully. Sent and verified " +
-                    messageCount +
-                    " messages."
-            );
+            System.out.println("Application completed successfully. Sent and verified " + messageCount + " messages.");
         } catch (ParseException e) {
-            System.err.println(
-                "Error parsing command line arguments: " + e.getMessage()
-            );
+            System.err.println("Error parsing command line arguments: " + e.getMessage());
             formatter.printHelp("KafkaApplication", options);
             System.exit(1);
         }
@@ -100,12 +82,11 @@ public class KafkaApplication {
             .required(true)
             .build();
 
-        Option countOption = Option.builder("c")
-            .longOpt("count")
-            .desc("Number of messages to send")
+        Option topicOption = Option.builder("t")
+            .longOpt("topic")
+            .desc("Topic name")
             .hasArg()
             .required(true)
-            .type(Number.class)
             .build();
 
         Option acksOption = Option.builder("a")
@@ -115,20 +96,36 @@ public class KafkaApplication {
             .required(true)
             .build();
 
-        Option sizeOption = Option.builder("s")
-            .longOpt("size")
+        Option groupProtocolOption = Option.builder("g")
+            .longOpt("group-protocol")
+            .desc("Group protocol")
+            .hasArg()
+            .required(true)
+            .build();
+
+        Option messageSizeOption = Option.builder("s")
+            .longOpt("message-size")
             .desc("Size of random message strings")
             .hasArg()
             .required(true)
             .type(Number.class)
             .build();
 
-        options.addOption(brokerOption);
-        options.addOption(countOption);
-        options.addOption(acksOption);
-        options.addOption(sizeOption);
+        Option messageCountOption = Option.builder("c")
+            .longOpt("message-count")
+            .desc("Number of messages to send")
+            .hasArg()
+            .required(true)
+            .type(Number.class)
+            .build();
 
-        return options;
+        return options
+            .addOption(brokerOption)
+            .addOption(topicOption)
+            .addOption(acksOption)
+            .addOption(groupProtocolOption)
+            .addOption(messageCountOption)
+            .addOption(messageSizeOption);
     }
 
     private static String generateRandomString(int length) {
